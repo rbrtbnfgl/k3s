@@ -49,8 +49,7 @@ type Node struct {
 	FlannelConfFile          string
 	FlannelConfOverride      bool
 	FlannelIface             *net.Interface
-	FlannelIPv6Masq          bool
-	FlannelExternalIP        bool
+	FlannelOpts              FlannelOptions
 	EgressSelectorMode       string
 	Containerd               Containerd
 	CRIDockerd               CRIDockerd
@@ -99,6 +98,13 @@ type Containerd struct {
 type CRIDockerd struct {
 	Address string
 	Root    string
+}
+
+type FlannelOptions struct {
+	IPv4Masq       bool
+	IPv6Masq       bool
+	ExternalIP     bool
+	BackendConfig  []string
 }
 
 type Agent struct {
@@ -168,24 +174,23 @@ type Agent struct {
 // CriticalControlArgs contains parameters that all control plane nodes in HA must share
 // The cli tag is used to provide better error information to the user on mismatch
 type CriticalControlArgs struct {
-	ClusterDNSs           []net.IP     `cli:"cluster-dns"`
-	ClusterIPRanges       []*net.IPNet `cli:"cluster-cidr"`
-	ClusterDNS            net.IP       `cli:"cluster-dns"`
-	ClusterDomain         string       `cli:"cluster-domain"`
-	ClusterIPRange        *net.IPNet   `cli:"cluster-cidr"`
-	DisableCCM            bool         `cli:"disable-cloud-controller"`
-	DisableHelmController bool         `cli:"disable-helm-controller"`
-	DisableNPC            bool         `cli:"disable-network-policy"`
-	DisableServiceLB      bool         `cli:"disable-service-lb"`
-	EncryptSecrets        bool         `cli:"secrets-encryption"`
-	EmbeddedRegistry      bool         `cli:"embedded-registry"`
-	FlannelBackend        string       `cli:"flannel-backend"`
-	FlannelIPv6Masq       bool         `cli:"flannel-ipv6-masq"`
-	FlannelExternalIP     bool         `cli:"flannel-external-ip"`
-	EgressSelectorMode    string       `cli:"egress-selector-mode"`
-	ServiceIPRange        *net.IPNet   `cli:"service-cidr"`
-	ServiceIPRanges       []*net.IPNet `cli:"service-cidr"`
-	SupervisorMetrics     bool         `cli:"supervisor-metrics"`
+	ClusterDNSs           []net.IP       `cli:"cluster-dns"`
+	ClusterIPRanges       []*net.IPNet   `cli:"cluster-cidr"`
+	ClusterDNS            net.IP         `cli:"cluster-dns"`
+	ClusterDomain         string         `cli:"cluster-domain"`
+	ClusterIPRange        *net.IPNet     `cli:"cluster-cidr"`
+	DisableCCM            bool           `cli:"disable-cloud-controller"`
+	DisableHelmController bool           `cli:"disable-helm-controller"`
+	DisableNPC            bool           `cli:"disable-network-policy"`
+	DisableServiceLB      bool           `cli:"disable-service-lb"`
+	EncryptSecrets        bool           `cli:"secrets-encryption"`
+	EmbeddedRegistry      bool           `cli:"embedded-registry"`
+	FlannelBackend        string         `cli:"flannel-backend"`
+	FlannelOpts           FlannelOptions `cli:"flannel-opts"` 
+	EgressSelectorMode    string         `cli:"egress-selector-mode"`
+	ServiceIPRange        *net.IPNet     `cli:"service-cidr"`
+	ServiceIPRanges       []*net.IPNet   `cli:"service-cidr"`
+	SupervisorMetrics     bool           `cli:"supervisor-metrics"`
 }
 
 type Control struct {
@@ -482,4 +487,41 @@ func GetArgs(initialArgs map[string]string, extraArgs []string) []string {
 	}
 
 	return args
+}
+
+func ParseFlannelOptions(opts []string) FlannelOptions {
+	flannelOpts := FlannelOptions {
+		IPv4Masq: true,
+		IPv6Masq: false,
+		ExternalIP: false,
+		BackendConfig: []string{},
+	}
+	for _, opt := range opts {
+		if strings.HasPrefix(opt, "masq-ipv4") {
+			flags := strings.Split(opt, "=")
+			if flags[0] == "masq-ipv4" {
+				if len(flags) > 1 && flags[1] == "false" {
+					flannelOpts.IPv4Masq = false
+				}
+			}
+		} else if strings.HasPrefix(opt, "masq-ipv6") {
+			flags := strings.Split(opt, "=")
+			if flags[0] == "masq-ipv6" {
+				if len(flags) == 1 || len(flags) > 1 && flags[1] == "true" {
+					flannelOpts.IPv6Masq = true
+				}
+			}
+		} else if strings.HasPrefix(opt, "external-ip") {
+			flags := strings.Split(opt, "=")
+			if flags[0] == "external-ip" {
+				if len(flags) == 1 || len(flags) > 1 && flags[1] == "true" {
+					flannelOpts.ExternalIP = true
+				}
+			}
+		} else if strings.HasPrefix(opt, "backend-"){
+			flags := strings.Split(opt, "backend-")
+			flannelOpts.BackendConfig = append(flannelOpts.BackendConfig, flags[1])
+		}
+	}
+	return flannelOpts
 }

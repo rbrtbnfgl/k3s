@@ -28,6 +28,7 @@ import (
 	"github.com/flannel-io/flannel/pkg/subnet/kube"
 	"github.com/flannel-io/flannel/pkg/trafficmngr/iptables"
 	"github.com/joho/godotenv"
+        "github.com/k3s-io/k3s/pkg/daemons/config"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
@@ -50,7 +51,7 @@ var (
 	FlannelExternalIPv6Annotation = FlannelBaseAnnotation + "/public-ipv6-overwrite"
 )
 
-func flannel(ctx context.Context, flannelIface *net.Interface, flannelConf, kubeConfigFile string, flannelIPv6Masq bool, netMode int) error {
+func flannel(ctx context.Context, flannelIface *net.Interface, flannelConf, kubeConfigFile string, flannelOpts config.FlannelOptions, netMode int) error {
 	extIface, err := LookupExtInterface(flannelIface, netMode)
 	if err != nil {
 		return errors.Wrap(err, "failed to find the interface")
@@ -101,11 +102,13 @@ func flannel(ctx context.Context, flannelIface *net.Interface, flannelConf, kube
 
 	prevIPv6Network := ReadIP6CIDRFromSubnetFile(subnetFile, "FLANNEL_IPV6_NETWORK")
 	prevIPv6Subnet := ReadIP6CIDRFromSubnetFile(subnetFile, "FLANNEL_IPV6_SUBNET")
-	if flannelIPv6Masq {
+	if flannelOpts.IPv4Masq && flannelOpts.IPv6Masq {
 		err = trafficMngr.SetupAndEnsureMasqRules(ctx, config.Network, prevSubnet, prevNetwork, config.IPv6Network, prevIPv6Subnet, prevIPv6Network, bn.Lease(), 60)
-	} else {
+	} else if flannelOpts.IPv4Masq && !flannelOpts.IPv6Masq {
 		//set empty flannel ipv6 Network to prevent masquerading
 		err = trafficMngr.SetupAndEnsureMasqRules(ctx, config.Network, prevSubnet, prevNetwork, ip.IP6Net{}, prevIPv6Subnet, prevIPv6Network, bn.Lease(), 60)
+	} else if !flannelOpts.IPv4Masq && flannelOpts.IPv6Masq {
+		err = trafficMngr.SetupAndEnsureMasqRules(ctx, ip.IP4Net{}, prevSubnet, prevNetwork, ip.IP6Net{}, prevIPv6Subnet, prevIPv6Network, bn.Lease(), 60)
 	}
 	if err != nil {
 		return errors.Wrap(err, "failed to setup masq rules")
